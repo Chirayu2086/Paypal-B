@@ -109,9 +109,8 @@ def test_daily_limit_includes_approved_commitments():
     approve_intent("user-1", first["id"], first["approval_fingerprint"])
     second = create_intent("user-1", payload("250.00"))
     approve_intent("user-1", second["id"], second["approval_fingerprint"])
-    third = create_intent("user-1", payload("1.00"))
     with pytest.raises(HTTPException) as exc:
-        approve_intent("user-1", third["id"], third["approval_fingerprint"])
+        create_intent("user-1", payload("1.00"))
     assert exc.value.status_code == 422
 
 
