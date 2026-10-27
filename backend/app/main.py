@@ -4,7 +4,7 @@ from backend.app.config import settings, validate_runtime_config
 from backend.app.database import init_db
 from backend.app.schemas import ActivityEvent, ApprovalRequest, PaymentIntentCreate, PaymentIntentOut
 from backend.app.security import current_user
-from backend.app.service import approve_intent, create_intent, execute_intent, get_owned_intent, list_activity
+from backend.app.service import approve_intent, create_intent, execute_intent, get_owned_intent, list_activity, reconcile_intent
 
 
 @asynccontextmanager
@@ -40,6 +40,12 @@ def approve_payment_intent(intent_id: str, payload: ApprovalRequest, user_id: st
 @app.post("/v1/payment-intents/{intent_id}/execute", response_model=PaymentIntentOut)
 def execute_payment_intent(intent_id: str, user_id: str = Depends(current_user)):
     return execute_intent(user_id, intent_id)
+
+
+@app.post("/v1/payment-intents/{intent_id}/reconcile", response_model=PaymentIntentOut)
+def reconcile_payment_intent(intent_id: str, user_id: str = Depends(current_user)):
+    """Re-check provider status only; this endpoint never creates a payout."""
+    return reconcile_intent(user_id, intent_id)
 
 
 @app.get("/v1/activity", response_model=list[ActivityEvent])
