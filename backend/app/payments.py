@@ -11,6 +11,7 @@ from backend.app.config import settings
 class PaymentResult:
     transaction_id: str
     status: str
+    payout_batch_id: str | None = None
 
 
 class PaymentProviderNotConfigured(RuntimeError):
@@ -19,6 +20,10 @@ class PaymentProviderNotConfigured(RuntimeError):
 
 class PaymentProviderError(RuntimeError):
     """Provider did not yield a verified terminal success."""
+
+    def __init__(self, message: str, *, payout_batch_id: str | None = None):
+        super().__init__(message)
+        self.payout_batch_id = payout_batch_id
 
 
 class PayPalSandboxProvider:
@@ -121,14 +126,51 @@ class PayPalSandboxProvider:
             last_status = str(matching_item.get("transaction_status") or "unknown").upper()
             transaction_id = matching_item.get("transaction_id")
             if last_status == "SUCCESS" and isinstance(transaction_id, str) and transaction_id:
-                return PaymentResult(transaction_id=transaction_id, status="SUCCESS")
+                return PaymentResult(transaction_id=transaction_id, status="SUCCESS", payout_batch_id=batch_id)
             if last_status in {"FAILED", "RETURNED", "BLOCKED", "DENIED", "CANCELED", "CANCELLED", "REFUNDED", "REVERSED"}:
-                raise PaymentProviderError(f"PayPal payout item reached terminal status={last_status}")
+                raise PaymentProviderError(f"PayPal payout item reached terminal status={last_status}", payout_batch_id=batch_id)
             if attempt + 1 < self._max_status_checks:
                 self._sleep(self._poll_interval_seconds)
 
         raise PaymentProviderError(
-            f"PayPal payout item did not reach verified success after {self._max_status_checks} checks (status={last_status}); reconcile before retrying"
+            f"PayPal payout item did not reach verified success after {self._max_status_checks} checks (status={last_status}); reconcile before retrying",
+            payout_batch_id=batch_id,
+        )
+
+ 
+    def reconcile_payout(self, *, payout_batch_id: str, idempotency_key: str) -> PaymentResult:
+        """Read an existing payout batch; this method never creates a payout."""
+        token = self._access_token()
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        }
+        response = self._client.get(
+            f"{self._base_url}/v1/payments/payouts/{payout_batch_id}",
+            headers=headers,
+        )
+        response.raise_for_status()
+        detail = response.json()
+        items = detail.get("items") or []
+        matching_item = next(
+            (
+                item for item in items
+                if (item.get("payout_item") or {}).get("sender_item_id") == idempotency_key[:63]
+            ),
+            None,
+        )
+        if matching_item is None:
+            raise PaymentProviderError(
+                "PayPal batch does not contain the expected payout item",
+                payout_batch_id=payout_batch_id,
+            )
+        status = str(matching_item.get("transaction_status") or "unknown").upper()
+        transaction_id = matching_item.get("transaction_id")
+        if status == "SUCCESS" and isinstance(transaction_id, str) and transaction_id:
+            return PaymentResult(transaction_id=transaction_id, status="SUCCESS", payout_batch_id=payout_batch_id)
+        raise PaymentProviderError(
+            f"PayPal payout item is not verified successful (status={status})",
+            payout_batch_id=payout_batch_id,
         )
 
 
