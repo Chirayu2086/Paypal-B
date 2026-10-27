@@ -17,7 +17,7 @@ def serialize_intent(row) -> dict:
         "id": row["id"], "owner_id": row["owner_id"], "recipient_name": row["recipient_name"],
         "recipient_email": row["recipient_email"], "amount": cents_to_amount(row["amount_cents"]),
         "currency": row["currency"], "purpose": row["purpose"], "condition_summary": row["condition_summary"],
-        "status": row["status"], "created_at": row["created_at"], "approved_at": row["approved_at"],
+        "approval_fingerprint": row["request_fingerprint"], "status": row["status"], "created_at": row["created_at"], "approved_at": row["approved_at"],
         "executed_at": row["executed_at"], "provider_transaction_id": row["provider_transaction_id"],
         "failure_code": row["failure_code"],
     }
@@ -116,8 +116,8 @@ def execute_intent(owner_id: str, intent_id: str, provider: PaymentProvider | No
     except Exception:
         with connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            conn.execute("UPDATE payment_intents SET status='failed', failure_code='provider_error' WHERE id=? AND status='processing'", (intent_id,))
-            audit(conn, intent_id, "payment.execution_failed", owner_id, "Provider did not confirm success; reconcile provider state before retrying")
+            conn.execute("UPDATE payment_intents SET failure_code='provider_outcome_unknown' WHERE id=? AND status='processing'", (intent_id,))
+            audit(conn, intent_id, "payment.execution_outcome_unknown", owner_id, "Provider call failed without a definitive outcome; left in processing to prevent duplicate payout. Reconcile with PayPal before any retry.")
             conn.commit()
         raise HTTPException(status_code=502, detail="Payment provider did not confirm success; check provider status before retrying") from None
     with connect() as conn:
