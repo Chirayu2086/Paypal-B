@@ -110,8 +110,14 @@ class PayPalSandboxProvider:
                 f"{self._base_url}/v1/payments/payouts/{batch_id}",
                 headers=headers,
             )
-            detail_response.raise_for_status()
-            detail = detail_response.json()
+            try:
+                detail_response.raise_for_status()
+                detail = detail_response.json()
+            except (httpx.HTTPError, ValueError) as exc:
+                raise PaymentProviderError(
+                    "Could not verify the existing PayPal payout batch; reconcile before any retry",
+                    payout_batch_id=batch_id,
+                ) from exc
             items = detail.get("items") or []
             matching_item = next(
                 (
@@ -149,8 +155,14 @@ class PayPalSandboxProvider:
             f"{self._base_url}/v1/payments/payouts/{payout_batch_id}",
             headers=headers,
         )
-        response.raise_for_status()
-        detail = response.json()
+        try:
+            response.raise_for_status()
+            detail = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise PaymentProviderError(
+                "Could not read the existing PayPal payout batch",
+                payout_batch_id=payout_batch_id,
+            ) from exc
         items = detail.get("items") or []
         matching_item = next(
             (
