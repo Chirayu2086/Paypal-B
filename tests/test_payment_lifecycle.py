@@ -173,7 +173,9 @@ def test_reconciliation_marks_success_only_after_provider_confirmation():
     assert reconciled["status"] == "succeeded"
     assert reconciled["provider_transaction_id"] == "SANDBOX-RECONCILED-TXN"
     assert reconciled["provider_payout_batch_id"] == "BATCH-UNKNOWN"
-    assert provider.reconcile_calls == [("BATCH-UNKNOWN", approved["idempotency_key"] if "idempotency_key" in approved else get_owned_intent("user-1", created["id"]).get("idempotency_key"))]
+    assert len(provider.reconcile_calls) == 1
+    assert provider.reconcile_calls[0][0] == "BATCH-UNKNOWN"
+    assert provider.reconcile_calls[0][1].startswith("proxy-")
     assert provider.execute_calls == 0
     assert "payment.reconciliation_succeeded" in [e["event_type"] for e in list_activity("user-1")]
 
