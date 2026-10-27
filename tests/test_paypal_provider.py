@@ -1,4 +1,3 @@
-import base64
 import json
 import httpx
 import pytest
@@ -50,7 +49,7 @@ def test_provider_only_reports_success_after_item_level_success(monkeypatch):
             }]})
         return httpx.Response(404, json={"name": "NOT_FOUND"})
 
-    provider = PayPalSandboxProvider(client=make_client(handler))
+    provider = PayPalSandboxProvider(client=make_client(handler), sleep=lambda _: None)
     result = provider.execute_payout(
         recipient_email="jordan@example.com",
         amount_cents=8500,
@@ -80,7 +79,7 @@ def test_provider_does_not_treat_pending_item_as_success(monkeypatch):
             }]})
         return httpx.Response(404)
 
-    provider = PayPalSandboxProvider(client=make_client(handler))
+    provider = PayPalSandboxProvider(client=make_client(handler), sleep=lambda _: None)
     with pytest.raises(PaymentProviderError):
         provider.execute_payout(
             recipient_email="jordan@example.com",
@@ -88,3 +87,72 @@ def test_provider_does_not_treat_pending_item_as_success(monkeypatch):
             currency="USD",
             idempotency_key="proxy-intent-456",
         )
+
+def test_provider_polls_pending_until_success(monkeypatch):
+    monkeypatch.setattr(settings, "paypal_mode", "sandbox")
+    monkeypatch.setattr(settings, "paypal_client_id", "sandbox-id")
+    monkeypatch.setattr(settings, "paypal_client_secret", "sandbox-secret")
+    detail_calls = 0
+    sleeps = []
+
+    def handler(request):
+        nonlocal detail_calls
+        if request.url.path == "/v1/oauth2/token":
+            return httpx.Response(200, json={"access_token": "sandbox-token"})
+        if request.method == "POST" and request.url.path == "/v1/payments/payouts":
+            return httpx.Response(201, json={"batch_header": {"payout_batch_id": "BATCH-POLL", "batch_status": "PENDING"}})
+        if request.method == "GET" and request.url.path == "/v1/payments/payouts/BATCH-POLL":
+            detail_calls += 1
+            status = "PENDING" if detail_calls == 1 else "SUCCESS"
+            return httpx.Response(200, json={"items": [{
+                "transaction_status": status,
+                "transaction_id": "TXN-POLL" if status == "SUCCESS" else None,
+                "payout_item": {"sender_item_id": "proxy-intent-poll"},
+            }]})
+        return httpx.Response(404)
+
+    provider = PayPalSandboxProvider(
+        client=make_client(handler),
+        max_status_checks=3,
+        poll_interval_seconds=0.25,
+        sleep=sleeps.append,
+    )
+    result = provider.execute_payout(
+        recipient_email="jordan@example.com",
+        amount_cents=8500,
+        currency="USD",
+        idempotency_key="proxy-intent-poll",
+    )
+    assert result.transaction_id == "TXN-POLL"
+    assert detail_calls == 2
+    assert sleeps == [0.25]
+
+
+
+def test_reconcile_reads_existing_batch_without_creating_another_payout(monkeypatch):
+    monkeypatch.setattr(settings, "paypal_mode", "sandbox")
+    monkeypatch.setattr(settings, "paypal_client_id", "sandbox-id")
+    monkeypatch.setattr(settings, "paypal_client_secret", "sandbox-secret")
+    requests = []
+
+    def handler(request):
+        requests.append((request.method, request.url.path))
+        if request.url.path == "/v1/oauth2/token":
+            return httpx.Response(200, json={"access_token": "sandbox-token"})
+        if request.method == "GET" and request.url.path == "/v1/payments/payouts/EXISTING-BATCH":
+            return httpx.Response(200, json={"items": [{
+                "transaction_status": "SUCCESS",
+                "transaction_id": "TXN-EXISTING",
+                "payout_item": {"sender_item_id": "proxy-existing-key"},
+            }]})
+        return httpx.Response(404)
+
+    provider = PayPalSandboxProvider(client=make_client(handler))
+    result = provider.reconcile_payout(
+        payout_batch_id="EXISTING-BATCH",
+        idempotency_key="proxy-existing-key",
+    )
+    assert result.transaction_id == "TXN-EXISTING"
+    assert result.payout_batch_id == "EXISTING-BATCH"
+    assert ("POST", "/v1/payments/payouts") not in requests
+    assert ("GET", "/v1/payments/payouts/EXISTING-BATCH") in requests
