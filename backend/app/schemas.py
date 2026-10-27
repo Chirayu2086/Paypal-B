@@ -33,6 +33,7 @@ class PaymentIntentOut(BaseModel):
     currency: str
     purpose: str
     condition_summary: str | None
+    approval_fingerprint: str
     status: str
     created_at: datetime
     approved_at: datetime | None
