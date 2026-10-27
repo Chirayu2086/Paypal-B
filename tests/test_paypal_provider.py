@@ -126,3 +126,33 @@ def test_provider_polls_pending_until_success(monkeypatch):
     assert result.transaction_id == "TXN-POLL"
     assert detail_calls == 2
     assert sleeps == [0.25]
+
+
+
+def test_reconcile_reads_existing_batch_without_creating_another_payout(monkeypatch):
+    monkeypatch.setattr(settings, "paypal_mode", "sandbox")
+    monkeypatch.setattr(settings, "paypal_client_id", "sandbox-id")
+    monkeypatch.setattr(settings, "paypal_client_secret", "sandbox-secret")
+    requests = []
+
+    def handler(request):
+        requests.append((request.method, request.url.path))
+        if request.url.path == "/v1/oauth2/token":
+            return httpx.Response(200, json={"access_token": "sandbox-token"})
+        if request.method == "GET" and request.url.path == "/v1/payments/payouts/EXISTING-BATCH":
+            return httpx.Response(200, json={"items": [{
+                "transaction_status": "SUCCESS",
+                "transaction_id": "TXN-EXISTING",
+                "payout_item": {"sender_item_id": "proxy-existing-key"},
+            }]})
+        return httpx.Response(404)
+
+    provider = PayPalSandboxProvider(client=make_client(handler))
+    result = provider.reconcile_payout(
+        payout_batch_id="EXISTING-BATCH",
+        idempotency_key="proxy-existing-key",
+    )
+    assert result.transaction_id == "TXN-EXISTING"
+    assert result.payout_batch_id == "EXISTING-BATCH"
+    assert ("POST", "/v1/payments/payouts") not in requests
+    assert ("GET", "/v1/payments/payouts/EXISTING-BATCH") in requests
