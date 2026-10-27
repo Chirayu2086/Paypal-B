@@ -200,3 +200,25 @@ def test_reconciliation_is_owner_scoped_and_requires_processing_batch():
     assert missing_batch.value.status_code == 409
     assert provider.reconcile_calls == []
     assert provider.execute_calls == 0
+
+
+
+def test_reconciliation_does_not_accept_unverified_provider_result():
+    created = create_intent("user-1", payload())
+    approve_intent("user-1", created["id"], created["approval_fingerprint"])
+    with pytest.raises(HTTPException):
+        execute_intent("user-1", created["id"], provider=UnknownOutcomeProvider())
+
+    provider = ReconciliationProvider(
+        result=PaymentResult(
+            transaction_id="",
+            status="PENDING",
+            payout_batch_id="BATCH-UNKNOWN",
+        )
+    )
+    reconciled = reconcile_intent("user-1", created["id"], provider=provider)
+    assert reconciled["status"] == "processing"
+    assert reconciled["provider_transaction_id"] is None
+    assert reconciled["failure_code"] == "provider_outcome_unknown"
+    assert "payment.reconciliation_unresolved" in [e["event_type"] for e in list_activity("user-1")]
+    assert provider.execute_calls == 0
