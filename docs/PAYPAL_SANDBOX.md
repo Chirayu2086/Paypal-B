@@ -27,6 +27,7 @@ Never commit `.env`. Use credentials from the PayPal Developer Dashboard and con
 3. It submits one payout item with a stable idempotency key and sender batch ID.
 4. It fetches payout batch details and checks the specific item status.
 5. Only an item-level `SUCCESS` with a PayPal transaction ID is recorded as `succeeded`.
+6. The batch ID is persisted so an owner can call `POST /v1/payment-intents/{id}/reconcile` to re-check the same payout without creating a new one.
 
 An acknowledged/pending batch is not proof of settlement. If a network/provider error or non-terminal status occurs, the intent remains `processing` and requires reconciliation. Do not blindly retry with a new key. The stable sender batch ID is part of duplicate-payout protection.
 
@@ -34,6 +35,6 @@ An acknowledged/pending batch is not proof of settlement. If a network/provider 
 
 - This adapter has not yet been validated against live PayPal Sandbox credentials in this repository.
 - PayPal may return a pending batch before the item settles. A future reconciliation worker/webhook path must check the batch and item statuses and update the local state.
-- The adapter performs a bounded number of status checks (three by default, one second apart). If the item is still pending, it fails closed and leaves the intent in an ambiguous processing state. This is not a substitute for durable background reconciliation.
-- Durable background reconciliation, webhook signature verification, provider error taxonomy, rate limits, and integration testing against a configured Sandbox account remain follow-up tasks.
+- The adapter performs a bounded number of status checks (three by default, one second apart). If the item is still pending, it fails closed and leaves the intent in an ambiguous processing state. The owner-triggered reconciliation endpoint re-reads a persisted batch ID and never creates a payout. This is a manual recovery path, not a scheduled background worker.
+- Scheduled background reconciliation, webhook signature verification, provider error taxonomy, rate limits, and integration testing against a configured Sandbox account remain follow-up tasks.
 - This is not production-ready financial infrastructure.

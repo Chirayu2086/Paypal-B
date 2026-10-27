@@ -39,6 +39,7 @@ class PaymentIntentOut(BaseModel):
     approved_at: datetime | None
     executed_at: datetime | None
     provider_transaction_id: str | None
+    provider_payout_batch_id: str | None = None
     failure_code: str | None
 
 
