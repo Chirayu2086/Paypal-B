@@ -162,6 +162,8 @@ def reconcile_intent(owner_id: str, intent_id: str, provider: PaymentProvider | 
             payout_batch_id=batch_id,
             idempotency_key=idempotency_key,
         )
+        if not result.transaction_id or result.status.lower() not in {"success", "succeeded", "completed"}:
+            raise RuntimeError("Provider did not return a verified successful payout result")
     except PaymentProviderNotConfigured:
         raise HTTPException(status_code=503, detail="PayPal Sandbox adapter is not configured") from None
     except Exception as exc:
