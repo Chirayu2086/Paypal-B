@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
+import time
+from collections.abc import Callable
 import httpx
 
 from backend.app.config import settings
@@ -27,9 +29,16 @@ class PayPalSandboxProvider:
     attempting another payout.
     """
 
-    def __init__(self, *, client: httpx.Client | None = None):
+    def __init__(self, *, client: httpx.Client | None = None, max_status_checks: int = 3, poll_interval_seconds: float = 1.0, sleep: Callable[[float], None] = time.sleep):
+        if max_status_checks < 1:
+            raise ValueError("max_status_checks must be at least 1")
+        if poll_interval_seconds < 0:
+            raise ValueError("poll_interval_seconds cannot be negative")
         self._client = client or httpx.Client(timeout=httpx.Timeout(15.0, connect=5.0))
         self._base_url = "https://api-m.sandbox.paypal.com"
+        self._max_status_checks = max_status_checks
+        self._poll_interval_seconds = poll_interval_seconds
+        self._sleep = sleep
 
     def _credentials(self) -> tuple[str, str]:
         client_id = settings.paypal_client_id.strip()
@@ -88,23 +97,39 @@ class PayPalSandboxProvider:
             raise PaymentProviderError("PayPal accepted no identifiable payout batch; reconcile before retrying")
 
         # A create response is usually ACKNOWLEDGED/PENDING, not proof of settlement.
-        detail_response = self._client.get(
-            f"{self._base_url}/v1/payments/payouts/{batch_id}",
-            headers=headers,
-        )
-        detail_response.raise_for_status()
-        detail = detail_response.json()
-        items = detail.get("items") or []
-        for item in items:
-            payout_item = item.get("payout_item") or {}
-            if payout_item.get("sender_item_id") != idempotency_key[:63]:
-                continue
-            status = item.get("transaction_status", "")
-            transaction_id = item.get("transaction_id")
-            if status == "SUCCESS" and isinstance(transaction_id, str) and transaction_id:
+        # Poll only a bounded number of times. If still ambiguous, the service keeps
+        # the intent in processing; callers must not blindly submit a new payout.
+        last_status = "unknown"
+        for attempt in range(self._max_status_checks):
+            detail_response = self._client.get(
+                f"{self._base_url}/v1/payments/payouts/{batch_id}",
+                headers=headers,
+            )
+            detail_response.raise_for_status()
+            detail = detail_response.json()
+            items = detail.get("items") or []
+            matching_item = next(
+                (
+                    item for item in items
+                    if (item.get("payout_item") or {}).get("sender_item_id") == idempotency_key[:63]
+                ),
+                None,
+            )
+            if matching_item is None:
+                raise PaymentProviderError("PayPal batch does not contain the expected payout item; reconcile before retrying")
+
+            last_status = str(matching_item.get("transaction_status") or "unknown").upper()
+            transaction_id = matching_item.get("transaction_id")
+            if last_status == "SUCCESS" and isinstance(transaction_id, str) and transaction_id:
                 return PaymentResult(transaction_id=transaction_id, status="SUCCESS")
-            raise PaymentProviderError(f"PayPal payout item is not settled successfully (status={status or 'unknown'})")
-        raise PaymentProviderError("PayPal batch does not contain the expected payout item; reconcile before retrying")
+            if last_status in {"FAILED", "RETURNED", "BLOCKED", "DENIED", "CANCELED", "CANCELLED", "REFUNDED", "REVERSED"}:
+                raise PaymentProviderError(f"PayPal payout item reached terminal status={last_status}")
+            if attempt + 1 < self._max_status_checks:
+                self._sleep(self._poll_interval_seconds)
+
+        raise PaymentProviderError(
+            f"PayPal payout item did not reach verified success after {self._max_status_checks} checks (status={last_status}); reconcile before retrying"
+        )
 
 
 class PaymentProvider(PayPalSandboxProvider):

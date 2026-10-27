@@ -34,6 +34,6 @@ An acknowledged/pending batch is not proof of settlement. If a network/provider 
 
 - This adapter has not yet been validated against live PayPal Sandbox credentials in this repository.
 - PayPal may return a pending batch before the item settles. A future reconciliation worker/webhook path must check the batch and item statuses and update the local state.
-- The initial adapter checks the batch once. If the item is still pending, it fails closed and leaves the intent in an ambiguous processing state.
-- Webhook signature verification, automated reconciliation, provider error taxonomy, rate limits, and integration testing against a configured Sandbox account remain follow-up tasks.
+- The adapter performs a bounded number of status checks (three by default, one second apart). If the item is still pending, it fails closed and leaves the intent in an ambiguous processing state. This is not a substitute for durable background reconciliation.
+- Durable background reconciliation, webhook signature verification, provider error taxonomy, rate limits, and integration testing against a configured Sandbox account remain follow-up tasks.
 - This is not production-ready financial infrastructure.
