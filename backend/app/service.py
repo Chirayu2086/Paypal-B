@@ -78,7 +78,7 @@ def approve_intent(owner_id: str, intent_id: str, confirm_fingerprint: str) -> d
         enforce_daily_limit(conn, owner_id, int(row["amount_cents"]))
         approved = now_iso()
         conn.execute("UPDATE payment_intents SET status='approved', approved_at=?, idempotency_key=? WHERE id=? AND status='pending_approval'",
-                     (approved, f"proxy-{intent_id}", intent_id))
+                     (approved, f"proxy-{intent_id.replace('-', '')}", intent_id))
         audit(conn, intent_id, "payment_intent.approved", owner_id, "Owner explicitly approved the current immutable request snapshot")
         updated = conn.execute("SELECT * FROM payment_intents WHERE id=?", (intent_id,)).fetchone()
         conn.commit()
