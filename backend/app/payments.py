@@ -127,7 +127,10 @@ class PayPalSandboxProvider:
                 None,
             )
             if matching_item is None:
-                raise PaymentProviderError("PayPal batch does not contain the expected payout item; reconcile before retrying")
+                raise PaymentProviderError(
+                    "PayPal batch does not contain the expected payout item; reconcile before retrying",
+                    payout_batch_id=batch_id,
+                )
 
             last_status = str(matching_item.get("transaction_status") or "unknown").upper()
             transaction_id = matching_item.get("transaction_id")
