@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS payment_intents (
   executed_at TEXT,
   provider_transaction_id TEXT UNIQUE,
   idempotency_key TEXT UNIQUE,
+  provider_payout_batch_id TEXT UNIQUE,
   failure_code TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_intents_owner_created ON payment_intents(owner_id, created_at DESC);
@@ -56,3 +57,11 @@ def connect() -> Iterator[sqlite3.Connection]:
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+        # Forward-compatible migration for existing SQLite databases.
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(payment_intents)").fetchall()}
+        if "provider_payout_batch_id" not in columns:
+            conn.execute("ALTER TABLE payment_intents ADD COLUMN provider_payout_batch_id TEXT")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_intents_provider_batch "
+            "ON payment_intents(provider_payout_batch_id) WHERE provider_payout_batch_id IS NOT NULL"
+        )
