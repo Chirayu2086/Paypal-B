@@ -1,9 +1,10 @@
 from contextlib import asynccontextmanager
-from fastapi import Depends, FastAPI, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from backend.app.ai_agent import extract_payment_draft
 from backend.app.config import settings, validate_runtime_config
 from backend.app.database import init_db
-from backend.app.schemas import ActivityEvent, ApprovalRequest, PaymentIntentCreate, PaymentIntentOut
+from backend.app.schemas import ActivityEvent, ApprovalRequest, DraftRequest, DraftResponseOut, PaymentIntentCreate, PaymentIntentOut
 from backend.app.security import current_user
 from backend.app.service import approve_intent, create_intent, execute_intent, get_owned_intent, list_activity, list_owned_intents, reconcile_intent
 
@@ -15,7 +16,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Proxy API", version="0.1.0", description="Safety-first AI payment agent API", lifespan=lifespan)
+app = FastAPI(title="Proxy API", version="0.2.0", description="Safety-first AI payment agent API")
 allowed_origins = [origin.strip() for origin in settings.cors_allowed_origins.split(",") if origin.strip()]
 if allowed_origins:
     app.add_middleware(
@@ -29,7 +30,20 @@ if allowed_origins:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "environment": settings.app_env, "payments": "sandbox_only"}
+    return {"status": "ok", "environment": settings.app_env, "payments": "sandbox_only", "ai_drafting": bool(settings.ai_api_key)}
+
+
+@app.post("/v1/assistant/draft", response_model=DraftResponseOut)
+def draft_payment_request(payload: DraftRequest, user_id: str = Depends(current_user)):
+    """Extract a proposed payment form only. This endpoint never creates or approves an intent."""
+    try:
+        return extract_payment_draft(payload.instruction).model_dump()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except RuntimeError as exc:
+        message = str(exc)
+        status = 503 if "not configured" in message else 502
+        raise HTTPException(status_code=status, detail=message) from None
 
 
 @app.post("/v1/payment-intents", response_model=PaymentIntentOut, status_code=201)
