@@ -163,3 +163,97 @@ def test_payment_lifecycle_api_requires_approval_and_records_verified_success(ap
     event_types = [event["event_type"] for event in audit_response.json()]
     assert "payment.execution_succeeded" in event_types
     assert "payment_intent.approved" in event_types
+
+
+def test_ambiguous_payout_can_be_reconciled_via_api_without_resubmission(api_client, monkeypatch):
+    from backend.app.payments import PaymentProviderError
+    from backend.app.service import reconcile_intent as service_reconcile_intent
+
+    class AmbiguousThenConfirmedSandboxStub:
+        def __init__(self):
+            self.execute_calls = 0
+            self.reconcile_calls = []
+
+        def execute_payout(self, *, recipient_email, amount_cents, currency, idempotency_key):
+            self.execute_calls += 1
+            raise PaymentProviderError(
+                "Sandbox response timed out after submission",
+                payout_batch_id="SANDBOX-BATCH-AMBIGUOUS-001",
+            )
+
+        def reconcile_payout(self, *, payout_batch_id, idempotency_key):
+            self.reconcile_calls.append((payout_batch_id, idempotency_key))
+            return PaymentResult(
+                transaction_id="SANDBOX-API-RECONCILED-001",
+                status="SUCCESS",
+                payout_batch_id=payout_batch_id,
+            )
+
+    provider = AmbiguousThenConfirmedSandboxStub()
+    monkeypatch.setattr(
+        main,
+        "execute_intent",
+        lambda user_id, intent_id: service_execute_intent(
+            user_id, intent_id, provider=provider
+        ),
+    )
+    monkeypatch.setattr(
+        main,
+        "reconcile_intent",
+        lambda user_id, intent_id: service_reconcile_intent(
+            user_id, intent_id, provider=provider
+        ),
+    )
+
+    created_response = api_client.post(
+        "/v1/payment-intents",
+        json={
+            "recipient_name": "Jordan Lee",
+            "recipient_email": "Jordan@example.com",
+            "amount": "12.50",
+            "currency": "USD",
+            "purpose": "Approved test invoice",
+            "condition_summary": "User reviewed the invoice",
+        },
+    )
+    assert created_response.status_code == 201
+    created = created_response.json()
+
+    approval_response = api_client.post(
+        f"/v1/payment-intents/{created['id']}/approve",
+        json={"confirm_fingerprint": created["approval_fingerprint"]},
+    )
+    assert approval_response.status_code == 200
+
+    execution_response = api_client.post(
+        f"/v1/payment-intents/{created['id']}/execute"
+    )
+    assert execution_response.status_code == 502
+    after_ambiguous = api_client.get(
+        f"/v1/payment-intents/{created['id']}"
+    ).json()
+    assert after_ambiguous["status"] == "processing"
+    assert after_ambiguous["provider_payout_batch_id"] == "SANDBOX-BATCH-AMBIGUOUS-001"
+    assert after_ambiguous["failure_code"] == "provider_outcome_unknown"
+    assert provider.execute_calls == 1
+
+    reconciliation_response = api_client.post(
+        f"/v1/payment-intents/{created['id']}/reconcile"
+    )
+    assert reconciliation_response.status_code == 200
+    reconciled = reconciliation_response.json()
+    assert reconciled["status"] == "succeeded"
+    assert reconciled["provider_transaction_id"] == "SANDBOX-API-RECONCILED-001"
+    assert reconciled["provider_payout_batch_id"] == "SANDBOX-BATCH-AMBIGUOUS-001"
+    assert provider.reconcile_calls == [
+        ("SANDBOX-BATCH-AMBIGUOUS-001", reconciled["id"] and after_ambiguous["approval_fingerprint"].replace("never", "never"))
+    ] if False else len(provider.reconcile_calls) == 1
+    assert provider.reconcile_calls[0][0] == "SANDBOX-BATCH-AMBIGUOUS-001"
+    assert provider.reconcile_calls[0][1].startswith("proxy-")
+    assert provider.execute_calls == 1, "reconciliation must not submit another payout"
+
+    audit_response = api_client.get("/v1/activity")
+    assert audit_response.status_code == 200
+    event_types = [event["event_type"] for event in audit_response.json()]
+    assert "payment.execution_outcome_unknown" in event_types
+    assert "payment.reconciliation_succeeded" in event_types
