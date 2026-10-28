@@ -7,6 +7,7 @@ from backend.app.schemas import ActivityEvent, AgentProposal, AgentProposalReque
 from backend.app.security import current_user
 from backend.app.service import approve_intent, create_intent, execute_intent, get_owned_intent, list_activity, list_owned_intents, reconcile_intent
 from backend.app.agent import propose_payment
+from backend.app.evidence import EvidenceReviewRequest, EvidenceReviewResponse, review_evidence
 
 
 @asynccontextmanager
@@ -37,6 +38,12 @@ def health():
 def create_agent_proposal(payload: AgentProposalRequest, user_id: str = Depends(current_user)):
     """Extract a draft only; this endpoint never creates or executes a payment."""
     return propose_payment(payload)
+
+
+@app.post("/v1/agent/evidence-review", response_model=EvidenceReviewResponse)
+def create_evidence_review(payload: EvidenceReviewRequest, user_id: str = Depends(current_user)):
+    """Triage evidence completeness and URL hygiene; never claims to verify a claim."""
+    return review_evidence(payload)
 
 
 @app.post("/v1/payment-intents", response_model=PaymentIntentOut, status_code=201)
