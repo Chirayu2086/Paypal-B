@@ -245,9 +245,7 @@ def test_ambiguous_payout_can_be_reconciled_via_api_without_resubmission(api_cli
     assert reconciled["status"] == "succeeded"
     assert reconciled["provider_transaction_id"] == "SANDBOX-API-RECONCILED-001"
     assert reconciled["provider_payout_batch_id"] == "SANDBOX-BATCH-AMBIGUOUS-001"
-    assert provider.reconcile_calls == [
-        ("SANDBOX-BATCH-AMBIGUOUS-001", reconciled["id"] and after_ambiguous["approval_fingerprint"].replace("never", "never"))
-    ] if False else len(provider.reconcile_calls) == 1
+    assert len(provider.reconcile_calls) == 1
     assert provider.reconcile_calls[0][0] == "SANDBOX-BATCH-AMBIGUOUS-001"
     assert provider.reconcile_calls[0][1].startswith("proxy-")
     assert provider.execute_calls == 1, "reconciliation must not submit another payout"
