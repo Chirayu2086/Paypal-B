@@ -35,6 +35,17 @@ type Activity = {
   created_at: string;
 };
 
+type EvidenceInput = { label: string; url: string; note: string };
+type EvidenceAssessment = { label: string; url: string | null; status: string; observations: string[] };
+type EvidenceReview = {
+  claim: string;
+  assessment: string;
+  verified: boolean;
+  evidence_assessments: EvidenceAssessment[];
+  risk_flags: string[];
+  next_steps: string[];
+};
+
 const defaultApi = process.env.NEXT_PUBLIC_PROXY_API_URL || "http://localhost:8000";
 
 function money(amount: string, currency = "USD") {
@@ -66,6 +77,10 @@ export default function Home() {
   const [agentText, setAgentText] = useState("");
   const [agentProposal, setAgentProposal] = useState<AgentProposal | null>(null);
   const [agentBusy, setAgentBusy] = useState(false);
+  const [evidenceClaim, setEvidenceClaim] = useState("");
+  const [evidenceItems, setEvidenceItems] = useState<EvidenceInput[]>([{ label: "", url: "", note: "" }]);
+  const [evidenceReview, setEvidenceReview] = useState<EvidenceReview | null>(null);
+  const [evidenceBusy, setEvidenceBusy] = useState(false);
   const [form, setForm] = useState({
     recipient_name: "",
     recipient_email: "",
@@ -134,6 +149,34 @@ export default function Home() {
     } catch (error) {
       setNotice({ kind: "error", text: errorText(error) });
     } finally { setAgentBusy(false); }
+  }
+
+  async function handleEvidenceReview(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setEvidenceBusy(true);
+    setEvidenceReview(null);
+    setNotice(null);
+    try {
+      const evidence = evidenceItems
+        .filter((item) => item.label.trim() || item.url.trim() || item.note.trim())
+        .map((item) => ({
+          label: item.label.trim() || "Unlabelled evidence",
+          ...(item.url.trim() ? { url: item.url.trim() } : {}),
+          ...(item.note.trim() ? { note: item.note.trim() } : {}),
+        }));
+      const result = await request("/v1/agent/evidence-review", {
+        method: "POST",
+        body: JSON.stringify({ claim: evidenceClaim.trim(), evidence }),
+      }) as EvidenceReview;
+      setEvidenceReview(result);
+      setNotice({ kind: "info", text: "Evidence triage completed. Proxy has not verified the claim or source contents." });
+    } catch (error) {
+      setNotice({ kind: "error", text: errorText(error) });
+    } finally { setEvidenceBusy(false); }
+  }
+
+  function updateEvidenceItem(index: number, field: keyof EvidenceInput, value: string) {
+    setEvidenceItems((items) => items.map((item, i) => i === index ? { ...item, [field]: value } : item));
   }
 
   function applyAgentProposal() {
@@ -288,6 +331,34 @@ export default function Home() {
               {agentProposal.risk_flags.length > 0 && <ul className="proposal-risks">{agentProposal.risk_flags.map((flag, i) => <li key={i}>{flag}</li>)}</ul>}
               <button className="button-outline" onClick={applyAgentProposal} type="button">Review in payment form <span>↓</span></button>
               <p className="proposal-disclaimer">Applying this draft only fills the form. You must still submit it, review the resulting intent, approve it explicitly, and execute separately.</p>
+            </div>}
+          </section>
+
+          <section className="panel evidence-panel" id="evidence-review">
+            <div className="section-heading"><div><div className="eyebrow">03 / EVIDENCE TRIAGE</div><h2>Review supporting evidence</h2></div><span className="evidence-status">UNVERIFIED BY DESIGN</span></div>
+            <p className="muted">Record the claim and any supporting source links or notes. Proxy checks submission completeness and basic URL hygiene only; it does not open links or establish truth.</p>
+            <form onSubmit={handleEvidenceReview} className="evidence-form">
+              <label>CLAIM TO REVIEW<textarea rows={2} maxLength={1000} required minLength={5} value={evidenceClaim} onChange={(e) => setEvidenceClaim(e.target.value)} placeholder="The supplier says the milestone was completed and requests payment…" /></label>
+              <div className="evidence-list-heading"><strong>Supporting evidence</strong><span>{evidenceItems.length} / 10 items</span></div>
+              {evidenceItems.map((item, index) => <div className="evidence-item" key={index}>
+                <div className="evidence-item-top"><strong>Evidence {index + 1}</strong>{evidenceItems.length > 1 && <button type="button" className="text-button" onClick={() => setEvidenceItems((items) => items.filter((_, i) => i !== index))}>Remove</button>}</div>
+                <div className="evidence-input-grid">
+                  <label>LABEL<input maxLength={120} value={item.label} onChange={(e) => updateEvidenceItem(index, "label", e.target.value)} placeholder="Invoice, receipt, contract…" /></label>
+                  <label>SOURCE URL (OPTIONAL)<input type="url" maxLength={2048} value={item.url} onChange={(e) => updateEvidenceItem(index, "url", e.target.value)} placeholder="https://example.com/document" /></label>
+                </div>
+                <label>SUBMITTER NOTE (UNVERIFIED)<textarea rows={2} maxLength={1000} value={item.note} onChange={(e) => updateEvidenceItem(index, "note", e.target.value)} placeholder="What this item is said to support…" /></label>
+              </div>)}
+              <div className="evidence-actions">
+                <button className="button-outline" type="button" disabled={evidenceItems.length >= 10} onClick={() => setEvidenceItems((items) => [...items, { label: "", url: "", note: "" }])}>+ Add evidence</button>
+                <button className="button-dark" type="submit" disabled={evidenceBusy || busy || !token.trim() || evidenceClaim.trim().length < 5}>{evidenceBusy ? "Reviewing…" : "Run evidence triage"} <span>→</span></button>
+              </div>
+            </form>
+            {evidenceReview && <div className="evidence-result" aria-live="polite">
+              <div className="evidence-result-heading"><div><small>ASSESSMENT</small><strong>{evidenceReview.assessment.replaceAll("_", " ")}</strong></div><span className="unverified-pill">NOT VERIFIED</span></div>
+              <p className="evidence-claim-result">{evidenceReview.claim}</p>
+              <div className="evidence-caveat"><strong>Verification boundary</strong><p>Verified: {evidenceReview.verified ? "Yes" : "No"}. Links were not fetched and source contents were not inspected. This result is not a fraud score or payment recommendation.</p></div>
+              {evidenceReview.evidence_assessments.length > 0 && <div className="evidence-assessments"><strong>Item observations</strong>{evidenceReview.evidence_assessments.map((item, index) => <div className="evidence-assessment" key={index}><div><strong>{item.label}</strong><span>{item.status}</span></div>{item.url && <p className="evidence-url">{item.url}</p>}<ul>{item.observations.map((observation, i) => <li key={i}>{observation}</li>)}</ul></div>)}</div>}
+              <div className="evidence-columns"><div><strong>Risk flags</strong>{evidenceReview.risk_flags.length ? <ul>{evidenceReview.risk_flags.map((flag, index) => <li key={index}>{flag}</li>)}</ul> : <p>No triage flags returned; that does not imply the claim is true.</p>}</div><div><strong>Manual next steps</strong><ol>{evidenceReview.next_steps.map((step, index) => <li key={index}>{step}</li>)}</ol></div></div>
             </div>}
           </section>
 

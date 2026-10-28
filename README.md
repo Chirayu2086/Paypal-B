@@ -14,6 +14,7 @@ Proxy is a human-approved AI payment assistant being built for the Build What's 
 - Next.js operator dashboard for creating intents, reviewing and approving them, requesting execution, reconciling uncertain outcomes, and viewing the audit trail.
 - AI-assisted natural-language proposal extraction with locally validated structured output, missing-field detection, and advisory risk flags.
 - Deterministic evidence triage that checks submission completeness and basic URL hygiene while explicitly leaving every claim and source unverified.
+- Dashboard evidence-review panel for entering a claim, adding up to 10 evidence references/notes, and reviewing triage flags and manual next steps.
 
 ## Stack
 
@@ -42,6 +43,6 @@ The evidence-review endpoint does not fetch sources or verify truth. Its output 
 - First-party authentication provider integration.
 - Real PayPal Sandbox end-to-end transaction validation.
 - Deployment, production-grade monitoring, webhook signature verification, and independent security review.
-- Evidence-review frontend panel (endpoint and backend tests only).
+- Independent evidence verification and automated source-content analysis.
 
 This is a hackathon MVP, not production financial infrastructure. Use Sandbox credentials only. Never commit secrets or use live payment credentials.
