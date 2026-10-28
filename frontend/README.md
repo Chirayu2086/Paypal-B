@@ -23,19 +23,22 @@ The backend expects authenticated requests on `/v1/*`. Paste a valid bearer toke
 
 ## Current capabilities
 
-- Create a structured payment intent.
-- Review recipient, amount, purpose, supporting context, and approval fingerprint.
-- Approve the exact intent snapshot.
-- Request execution separately from approval.
-- Reconcile an ambiguous outcome against the existing payout batch.
-- View payment intents and authenticated audit events.
-- Display API liveness separately from payment settlement status.
+- Create and list the authenticated user's payment intents.
+- Use AI-assisted natural-language extraction to draft a payment proposal, inspect missing fields and advisory risk flags, and transfer the draft to the payment form for manual review.
+- Run evidence triage for a claim with up to 10 evidence references/notes; inspect completeness and URL-hygiene observations and suggested manual checks.
+- Review recipient, amount, purpose, supporting context, and the immutable approval fingerprint.
+- Approve the exact intent snapshot and request execution as a separate action.
+- Reconcile an ambiguous outcome against the existing payout batch without submitting a new payout.
+- View the authenticated audit feed and distinguish API liveness from payment settlement status.
 
-## Honest limitations
+## Safety and limitations
 
-- This is an operator dashboard, not an AI chat or autonomous agent yet. Payment creation is a structured form; AI intent extraction and evidence analysis are not implemented in this UI.
-- The current API does not expose a list endpoint for payment intents. The dashboard shows the currently selected intent and authenticated audit feed; the table will populate only if the backend later adds a list route. The UI handles an unavailable list route without treating it as a payment failure.
-- Authentication is supplied externally; there is no demo login.
-- The UI only supports the backend's current USD schema.
+- AI proposals are drafts only. They do not create, approve, or execute payment intents automatically.
+- Evidence triage does not fetch submitted URLs, verify source authenticity, establish claim truth, or produce a calibrated fraud score. Its result is advisory and requires human review.
+- Authentication is supplied externally; there is no demo login or first-party sign-in flow.
+- The UI supports the backend's current USD schema.
 - PayPal Sandbox configuration and a real Sandbox end-to-end validation are still required. A healthy API does not mean PayPal is configured or a payout settled.
-- Before production: add mature auth integration, CSRF/CSP and deployment review, backend CORS allowlist, rate limiting, webhook verification, observability, and an independent security assessment.
+- The token is kept in in-memory React state, not localStorage or cookies. Do not paste PayPal credentials or secrets into the browser.
+- Before production: add mature auth integration, CSP/CSRF and deployment review, rate limiting, webhook verification, observability, robust operational recovery, and an independent security assessment.
+
+See the [Demo Runbook](../docs/DEMO_RUNBOOK.md) for the end-to-end presentation sequence and acceptance checklist.
