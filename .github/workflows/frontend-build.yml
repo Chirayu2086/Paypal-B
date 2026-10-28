@@ -1,0 +1,31 @@
+name: Frontend build
+
+on:
+  push:
+    branches: [main, 'feat/**', 'fix/**']
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-build.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-build.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm install
+      - name: Build Next.js app
+        run: npm run build
