@@ -30,6 +30,7 @@ Proxy is a human-approved AI payment assistant being built for the Build What's 
 2. Start the dashboard using [frontend/README.md](frontend/README.md).
 3. Configure `CORS_ALLOWED_ORIGINS` in the backend environment to the exact trusted frontend origin.
 4. Supply a JWT from the configured trusted identity provider in the dashboard connection panel.
+5. Follow the [Hackathon Demo Runbook](docs/DEMO_RUNBOOK.md) for a timed demo, acceptance checklist, and known limitations.
 
 ## Safety boundary
 
@@ -43,6 +44,5 @@ The evidence-review endpoint does not fetch sources or verify truth. Its output 
 - First-party authentication provider integration.
 - Real PayPal Sandbox end-to-end transaction validation.
 - Deployment, production-grade monitoring, webhook signature verification, and independent security review.
-- Independent evidence verification and automated source-content analysis.
 
 This is a hackathon MVP, not production financial infrastructure. Use Sandbox credentials only. Never commit secrets or use live payment credentials.
