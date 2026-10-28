@@ -74,7 +74,7 @@ def test_missing_fields_are_returned_instead_of_guessed(monkeypatch):
         "condition_summary": None,
     })
     result = extract_payment_draft("Pay Jordan for design work.")
-    assert result.missing_fields == ["recipient_email", "amount"]
+    assert result.missing_fields == ["recipient_email", "amount", "currency"]
     assert result.draft.amount is None
     assert result.created_payment_intent is False
 
