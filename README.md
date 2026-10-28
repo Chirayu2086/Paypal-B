@@ -1,30 +1,42 @@
 # Proxy
 
-**Your AI agent that can actually move money.**
+**Your AI agent that can actually move money — with a human in control.**
 
-Proxy is a human-approved AI payment assistant built for the Build What's Next with PayPal and AI Hackathon 2026. The MVP turns natural-language requests into structured payment intents, enforces server-side spending limits, requires explicit user approval, and uses PayPal Sandbox for payment execution.
+Proxy is a human-approved AI payment assistant being built for the Build What's Next with PayPal and AI Hackathon 2026. The current MVP lets a user create a structured payment intent, enforce server-side spending limits, explicitly approve an immutable request snapshot, execute through PayPal Sandbox, and reconcile ambiguous provider outcomes without submitting a duplicate payout.
 
-## Safety-first MVP
+## What exists today
 
-- Server-side policy enforcement; the model cannot override limits.
-- Explicit approval bound to an immutable payment-intent snapshot.
-- Idempotency and duplicate-execution protection.
-- Evidence analysis is advisory and never authorizes a payment.
-- Sandbox-only payment execution until separately reviewed.
-- Auditable state transitions and payment-provider outcomes.
+- FastAPI backend with JWT-authenticated, owner-scoped payment routes.
+- Server-side per-transaction and daily spend limits.
+- Approval fingerprint binds approval to the exact stored payment details.
+- PayPal Sandbox payout adapter with idempotency, bounded status polling, and read-only reconciliation.
+- Audit feed and automated backend tests.
+- Next.js operator dashboard for creating intents, reviewing and approving them, requesting execution, reconciling uncertain outcomes, and viewing the audit trail.
 
-## Planned stack
+## Stack
 
-- Frontend: Next.js + TypeScript + Tailwind CSS
+- Frontend: Next.js + TypeScript + CSS
 - Backend: Python + FastAPI
-- Persistence: SQLite for the MVP, with PostgreSQL migration path
-- Payments: PayPal Sandbox APIs, selected by transaction type
-- AI: provider-agnostic agent adapter with validated structured tools
+- Persistence: SQLite MVP
+- Payments: PayPal Sandbox Payouts
+- Authentication: externally issued signed JWT; no insecure demo-login endpoint
 
-## Project status
+## Run locally
 
-The security foundation is being built first. A UI or an AI-generated recommendation is not proof that a payment was executed; the activity feed must show provider-verified status and transaction identifiers.
+1. Start the backend using [backend/README.md](backend/README.md).
+2. Start the dashboard using [frontend/README.md](frontend/README.md).
+3. Configure `CORS_ALLOWED_ORIGINS` in the backend environment to the exact trusted frontend origin.
+4. Supply a JWT from the configured trusted identity provider in the dashboard connection panel.
 
-## Local development
+## Safety boundary
 
-See `backend/README.md` for backend setup once the first implementation phase is complete. Never commit API keys or real payment credentials. Copy `.env.example` to `.env` and use Sandbox credentials only.
+A created intent is not an approved payment. Approval is a separate action, execution is another action, and only a provider-verified transaction ID with a successful terminal status is represented as settled. Unknown outcomes remain in `processing` and should be reconciled against the existing provider batch rather than retried blindly.
+
+## Not yet implemented / validated
+
+- Natural-language AI intent extraction and evidence analysis.
+- First-party authentication provider integration.
+- Real PayPal Sandbox end-to-end transaction validation.
+- Deployment, production-grade monitoring, webhook signature verification, and independent security review.
+
+This is a hackathon MVP, not production financial infrastructure. Use Sandbox credentials only. Never commit secrets or use live payment credentials.
