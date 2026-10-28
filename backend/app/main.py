@@ -16,7 +16,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Proxy API", version="0.2.0", description="Safety-first AI payment agent API")
+app = FastAPI(title="Proxy API", version="0.2.0", description="Safety-first AI payment agent API", lifespan=lifespan)
 allowed_origins = [origin.strip() for origin in settings.cors_allowed_origins.split(",") if origin.strip()]
 if allowed_origins:
     app.add_middleware(
