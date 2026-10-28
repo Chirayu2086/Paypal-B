@@ -54,3 +54,23 @@ class ActivityEvent(BaseModel):
     actor_id: str | None
     details: str
     created_at: datetime
+
+
+class AgentProposalRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    text: str = Field(min_length=1, max_length=4000)
+
+
+class AgentProposal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    recipient_name: str | None = Field(default=None, max_length=120)
+    recipient_email: str | None = Field(default=None, max_length=254)
+    amount: str | None = Field(default=None, max_length=32)
+    currency: Literal["USD"] = "USD"
+    purpose: str | None = Field(default=None, max_length=500)
+    condition_summary: str | None = Field(default=None, max_length=1000)
+    explanation: str = Field(min_length=1, max_length=1000)
+    risk_flags: list[str] = Field(default_factory=list, max_length=10)
+    missing_fields: list[str] = Field(default_factory=list, max_length=5)
+    ready_for_review: bool = False
+    source_text: str = Field(default="", max_length=4000)
