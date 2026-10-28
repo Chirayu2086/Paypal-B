@@ -9,13 +9,17 @@ from fastapi.testclient import TestClient
 from backend.app import main
 from backend.app.config import settings
 from backend.app.schemas import AgentProposal
+from backend.app.database import init_db
+from backend.app.payments import PaymentResult
+from backend.app.service import execute_intent as service_execute_intent
 
 
 @pytest.fixture
-def api_client(monkeypatch):
+def api_client(monkeypatch, tmp_path):
     # Keep API tests isolated from runtime configuration and database startup.
     monkeypatch.setattr(main, "validate_runtime_config", lambda: None)
-    monkeypatch.setattr(main, "init_db", lambda: None)
+    monkeypatch.setattr(settings, "database_path", str(tmp_path / "api-workflow-test.db"))
+    monkeypatch.setattr(main, "init_db", init_db)
     main.app.dependency_overrides.clear()
     main.app.dependency_overrides[main.current_user] = lambda: "api-test-user"
     with TestClient(main.app) as client:
@@ -105,3 +109,57 @@ def test_agent_endpoints_require_authentication(monkeypatch):
     assert proposal_response.status_code == 401
     assert evidence_response.status_code == 401
     main.app.dependency_overrides.clear()
+
+
+
+def test_payment_lifecycle_api_requires_approval_and_records_verified_success(api_client, monkeypatch):
+    class SandboxStub:
+        def execute_payout(self, *, recipient_email, amount_cents, currency, idempotency_key):
+            assert recipient_email == "jordan@example.com"
+            assert amount_cents == 8500
+            assert currency == "USD"
+            assert idempotency_key.startswith("proxy-")
+            return PaymentResult(transaction_id="SANDBOX-API-TXN-001", status="SUCCESS")
+
+    monkeypatch.setattr(
+        main,
+        "execute_intent",
+        lambda user_id, intent_id: service_execute_intent(
+            user_id, intent_id, provider=SandboxStub()
+        ),
+    )
+    payload = {
+        "recipient_name": "Jordan Lee",
+        "recipient_email": "Jordan@example.com",
+        "amount": "85.00",
+        "currency": "USD",
+        "purpose": "Logo revisions",
+        "condition_summary": "The user reviewed and accepted the final source files",
+    }
+
+    created_response = api_client.post("/v1/payment-intents", json=payload)
+    assert created_response.status_code == 201
+    created = created_response.json()
+    assert created["status"] == "pending_approval"
+
+    blocked_execution = api_client.post(f"/v1/payment-intents/{created['id']}/execute")
+    assert blocked_execution.status_code == 409
+
+    approval_response = api_client.post(
+        f"/v1/payment-intents/{created['id']}/approve",
+        json={"confirm_fingerprint": created["approval_fingerprint"]},
+    )
+    assert approval_response.status_code == 200
+    assert approval_response.json()["status"] == "approved"
+
+    execution_response = api_client.post(f"/v1/payment-intents/{created['id']}/execute")
+    assert execution_response.status_code == 200
+    executed = execution_response.json()
+    assert executed["status"] == "succeeded"
+    assert executed["provider_transaction_id"] == "SANDBOX-API-TXN-001"
+
+    audit_response = api_client.get("/v1/activity")
+    assert audit_response.status_code == 200
+    event_types = [event["event_type"] for event in audit_response.json()]
+    assert "payment.execution_succeeded" in event_types
+    assert "payment_intent.approved" in event_types
