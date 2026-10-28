@@ -24,6 +24,28 @@ class PaymentIntentCreate(BaseModel):
         return value
 
 
+class DraftRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    instruction: str = Field(min_length=1, max_length=3000)
+
+
+class DraftFieldsOut(BaseModel):
+    recipient_name: str | None
+    recipient_email: str | None
+    amount: str | None
+    currency: str | None
+    purpose: str | None
+    condition_summary: str | None
+
+
+class DraftResponseOut(BaseModel):
+    draft: DraftFieldsOut
+    missing_fields: list[str]
+    warnings: list[str]
+    requires_human_review: bool = True
+    created_payment_intent: bool = False
+
+
 class PaymentIntentOut(BaseModel):
     id: str
     owner_id: str
