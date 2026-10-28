@@ -54,6 +54,17 @@ def create_intent(owner_id: str, payload: PaymentIntentCreate) -> dict:
     return serialize_intent(row)
 
 
+def list_owned_intents(owner_id: str, limit: int = 50) -> list[dict]:
+    """Return only the authenticated owner's most recent payment intents."""
+    bounded_limit = min(max(limit, 1), 100)
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM payment_intents WHERE owner_id=? ORDER BY created_at DESC, rowid DESC LIMIT ?",
+            (owner_id, bounded_limit),
+        ).fetchall()
+    return [serialize_intent(row) for row in rows]
+
+
 def get_owned_intent(owner_id: str, intent_id: str) -> dict:
     with connect() as conn:
         row = conn.execute("SELECT * FROM payment_intents WHERE id=? AND owner_id=?", (intent_id, owner_id)).fetchone()
@@ -96,7 +107,6 @@ def execute_intent(owner_id: str, intent_id: str, provider: PaymentProvider | No
         if row["status"] != "approved":
             conn.rollback()
             raise HTTPException(status_code=409, detail="Explicit approval is required before execution; request must be in approved state")
-        # Reserve the state before making an external call so concurrent calls cannot both execute.
         conn.execute("UPDATE payment_intents SET status='processing' WHERE id=? AND status='approved'", (intent_id,))
         audit(conn, intent_id, "payment.execution_started", owner_id, "Execution reserved; provider result pending")
         conn.commit()
@@ -110,7 +120,6 @@ def execute_intent(owner_id: str, intent_id: str, provider: PaymentProvider | No
             conn.execute("BEGIN IMMEDIATE")
             conn.execute("UPDATE payment_intents SET status='approved', failure_code='provider_not_configured' WHERE id=? AND status='processing'", (intent_id,))
             audit(conn, intent_id, "payment.execution_blocked", owner_id, "Provider not configured; no payment was sent")
-            row = conn.execute("SELECT * FROM payment_intents WHERE id=?", (intent_id,)).fetchone()
             conn.commit()
         raise HTTPException(status_code=503, detail="PayPal Sandbox adapter is not configured; no payment was sent")
     except Exception as exc:
@@ -129,7 +138,6 @@ def execute_intent(owner_id: str, intent_id: str, provider: PaymentProvider | No
         row = conn.execute("SELECT * FROM payment_intents WHERE id=?", (intent_id,)).fetchone()
         conn.commit()
     return serialize_intent(row)
-
 
 
 def reconcile_intent(owner_id: str, intent_id: str, provider: PaymentProvider | None = None) -> dict:
@@ -151,17 +159,10 @@ def reconcile_intent(owner_id: str, intent_id: str, provider: PaymentProvider | 
         idempotency_key = row["idempotency_key"]
         if not batch_id:
             conn.rollback()
-            raise HTTPException(
-                status_code=409,
-                detail="No PayPal batch ID was captured. The outcome remains unknown; do not retry automatically.",
-            )
+            raise HTTPException(status_code=409, detail="No PayPal batch ID was captured. The outcome remains unknown; do not retry automatically.")
         conn.commit()
-
     try:
-        result = provider.reconcile_payout(
-            payout_batch_id=batch_id,
-            idempotency_key=idempotency_key,
-        )
+        result = provider.reconcile_payout(payout_batch_id=batch_id, idempotency_key=idempotency_key)
         if not result.transaction_id or result.status.lower() not in {"success", "succeeded", "completed"}:
             raise RuntimeError("Provider did not return a verified successful payout result")
     except PaymentProviderNotConfigured:
@@ -169,28 +170,18 @@ def reconcile_intent(owner_id: str, intent_id: str, provider: PaymentProvider | 
     except Exception as exc:
         with connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            conn.execute(
-                "UPDATE payment_intents SET failure_code='provider_outcome_unknown' WHERE id=? AND status='processing'",
-                (intent_id,),
-            )
-            audit(
-                conn, intent_id, "payment.reconciliation_unresolved", owner_id,
-                f"Reconciliation did not confirm settlement: {type(exc).__name__}. Intent remains processing; no new payout submitted.",
-            )
+            conn.execute("UPDATE payment_intents SET failure_code='provider_outcome_unknown' WHERE id=? AND status='processing'", (intent_id,))
+            audit(conn, intent_id, "payment.reconciliation_unresolved", owner_id,
+                  f"Reconciliation did not confirm settlement: {type(exc).__name__}. Intent remains processing; no new payout submitted.")
             row = conn.execute("SELECT * FROM payment_intents WHERE id=?", (intent_id,)).fetchone()
             conn.commit()
         return serialize_intent(row)
-
     with connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        conn.execute(
-            "UPDATE payment_intents SET status='succeeded', executed_at=?, provider_transaction_id=?, failure_code=NULL WHERE id=? AND status='processing'",
-            (now_iso(), result.transaction_id, intent_id),
-        )
-        audit(
-            conn, intent_id, "payment.reconciliation_succeeded", owner_id,
-            f"Existing PayPal batch reconciled to SUCCESS; transaction_id={result.transaction_id}",
-        )
+        conn.execute("UPDATE payment_intents SET status='succeeded', executed_at=?, provider_transaction_id=?, failure_code=NULL WHERE id=? AND status='processing'",
+                     (now_iso(), result.transaction_id, intent_id))
+        audit(conn, intent_id, "payment.reconciliation_succeeded", owner_id,
+              f"Existing PayPal batch reconciled to SUCCESS; transaction_id={result.transaction_id}")
         row = conn.execute("SELECT * FROM payment_intents WHERE id=?", (intent_id,)).fetchone()
         conn.commit()
     return serialize_intent(row)
