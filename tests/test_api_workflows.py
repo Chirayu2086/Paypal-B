@@ -255,3 +255,101 @@ def test_ambiguous_payout_can_be_reconciled_via_api_without_resubmission(api_cli
     event_types = [event["event_type"] for event in audit_response.json()]
     assert "payment.execution_outcome_unknown" in event_types
     assert "payment.reconciliation_succeeded" in event_types
+
+
+
+def test_payment_intent_is_owner_scoped_and_fingerprint_must_match(api_client):
+    payload = {
+        "recipient_name": "Jordan Lee",
+        "recipient_email": "Jordan@example.com",
+        "amount": "10.00",
+        "currency": "USD",
+        "purpose": "Owner isolation test",
+        "condition_summary": "Review before approval",
+    }
+    created_response = api_client.post("/v1/payment-intents", json=payload)
+    assert created_response.status_code == 201
+    created = created_response.json()
+
+    mismatched_approval = api_client.post(
+        f"/v1/payment-intents/{created['id']}/approve",
+        json={"confirm_fingerprint": "0" * 64},
+    )
+    assert mismatched_approval.status_code == 409
+    assert api_client.get(f"/v1/payment-intents/{created['id']}").json()["status"] == "pending_approval"
+
+    # Switch the authenticated principal after creation; another owner must not
+    # be able to read the intent or see it in their list.
+    main.app.dependency_overrides[main.current_user] = lambda: "different-owner"
+    assert api_client.get(f"/v1/payment-intents/{created['id']}").status_code == 404
+    assert api_client.get("/v1/payment-intents").json() == []
+
+
+def test_unresolved_reconciliation_keeps_processing_and_never_reexecutes(api_client, monkeypatch):
+    from backend.app.payments import PaymentProviderError
+    from backend.app.service import reconcile_intent as service_reconcile_intent
+
+    class UnresolvedSandboxStub:
+        def __init__(self):
+            self.execute_calls = 0
+            self.reconcile_calls = 0
+
+        def execute_payout(self, *, recipient_email, amount_cents, currency, idempotency_key):
+            self.execute_calls += 1
+            raise PaymentProviderError(
+                "Submission outcome is ambiguous",
+                payout_batch_id="SANDBOX-BATCH-UNRESOLVED-001",
+            )
+
+        def reconcile_payout(self, *, payout_batch_id, idempotency_key):
+            self.reconcile_calls += 1
+            raise PaymentProviderError(
+                "Existing batch is still pending",
+                payout_batch_id=payout_batch_id,
+            )
+
+    provider = UnresolvedSandboxStub()
+    monkeypatch.setattr(
+        main,
+        "execute_intent",
+        lambda user_id, intent_id: service_execute_intent(
+            user_id, intent_id, provider=provider
+        ),
+    )
+    monkeypatch.setattr(
+        main,
+        "reconcile_intent",
+        lambda user_id, intent_id: service_reconcile_intent(
+            user_id, intent_id, provider=provider
+        ),
+    )
+
+    created_response = api_client.post(
+        "/v1/payment-intents",
+        json={
+            "recipient_name": "Jordan Lee",
+            "recipient_email": "Jordan@example.com",
+            "amount": "9.00",
+            "currency": "USD",
+            "purpose": "Unresolved reconciliation test",
+            "condition_summary": "Reviewed test intent",
+        },
+    )
+    assert created_response.status_code == 201
+    created = created_response.json()
+    approval = api_client.post(
+        f"/v1/payment-intents/{created['id']}/approve",
+        json={"confirm_fingerprint": created["approval_fingerprint"]},
+    )
+    assert approval.status_code == 200
+
+    execution = api_client.post(f"/v1/payment-intents/{created['id']}/execute")
+    assert execution.status_code == 502
+    unresolved = api_client.post(f"/v1/payment-intents/{created['id']}/reconcile")
+    assert unresolved.status_code == 200
+    body = unresolved.json()
+    assert body["status"] == "processing"
+    assert body["provider_payout_batch_id"] == "SANDBOX-BATCH-UNRESOLVED-001"
+    assert body["failure_code"] == "provider_outcome_unknown"
+    assert provider.execute_calls == 1
+    assert provider.reconcile_calls == 1
