@@ -2,6 +2,7 @@ from decimal import Decimal
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from backend.app.schemas import AgentProposalRequest
 from backend.app.agent import propose_payment
@@ -71,9 +72,5 @@ def test_unexpected_model_fields_are_rejected():
 
 
 def test_empty_source_is_rejected():
-    with pytest.raises(HTTPException) as exc:
-        propose_payment(
-            AgentProposalRequest(text=" "),
-            model_call=lambda _: valid_model_output(),
-        )
-    assert exc.value.status_code == 422
+    with pytest.raises(ValidationError):
+        AgentProposalRequest(text=" ")
