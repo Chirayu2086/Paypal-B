@@ -16,7 +16,7 @@ This runbook is for a controlled hackathon demonstration. Use PayPal Sandbox onl
 
 Prerequisites: Python 3.11+, Node.js 20.9+, a valid JWT from a trusted identity provider, and optional PayPal Sandbox credentials with Payouts enabled.
 
-1. Copy the root `.env.example` to `backend/.env` only if that matches your local config setup; otherwise configure the backend environment variables in your shell. Set a strong `JWT_SECRET`, `PAYPAL_MODE=sandbox`, and exact `CORS_ALLOWED_ORIGINS=http://localhost:3000`.
+1. Copy the root `.env.example` to `.env` in the repository root (the backend loads this file relative to the working directory). Set a strong `JWT_SECRET`, `PAYPAL_MODE=sandbox`, and exact `CORS_ALLOWED_ORIGINS=http://localhost:3000`.
 2. From the repository root, install backend dependencies and start the API:
    ```bash
    python -m venv .venv
