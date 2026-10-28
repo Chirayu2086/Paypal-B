@@ -259,7 +259,7 @@ export default function Home() {
 
           {showConnection && <section className="connection-panel">
             <div className="section-heading"><div><div className="eyebrow">01 / CONNECTION</div><h2>Connect your workspace</h2></div><button className="text-button" onClick={() => setShowConnection(false)}>Hide</button></div>
-            <p className="muted">Use a JWT from your trusted identity provider. Proxy intentionally has no demo-login shortcut. Your token stays in this page's memory and is not saved to local storage.</p>
+            <p className="muted">Use a JWT from your trusted identity provider. Proxy intentionally has no demo-login shortcut. Your token stays in this page&apos;s memory and is not saved to local storage.</p>
             <div className="connection-fields">
               <label>API BASE URL<input value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} placeholder="http://localhost:8000" spellCheck={false} /></label>
               <label>BEARER TOKEN<input value={token} onChange={(e) => setToken(e.target.value)} placeholder="Paste trusted JWT for this session" type="password" autoComplete="off" spellCheck={false} /></label>
