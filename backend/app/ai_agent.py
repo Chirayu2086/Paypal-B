@@ -80,8 +80,11 @@ def extract_payment_draft(instruction: str) -> DraftResponse:
     except (httpx.HTTPError, KeyError, IndexError, TypeError, json.JSONDecodeError, ValidationError) as exc:
         raise RuntimeError("AI drafting failed or returned an invalid structured response; no payment intent was created") from exc
 
+    if draft.currency != "USD":
+        draft.currency = None
+
     missing = []
-    for field in ("recipient_name", "recipient_email", "amount", "purpose"):
+    for field in ("recipient_name", "recipient_email", "amount", "currency", "purpose"):
         value = getattr(draft, field)
         if value is None or not str(value).strip():
             missing.append(field)
@@ -92,7 +95,7 @@ def extract_payment_draft(instruction: str) -> DraftResponse:
     if draft.condition_summary:
         warnings.append("Context is user-provided text, not independently verified evidence.")
     if draft.currency is None:
-        warnings.append("Currency was not explicitly confirmed as USD; select a supported currency before continuing.")
+        warnings.append("Currency was not explicitly confirmed as supported USD; select a supported currency before continuing.")
     if draft.recipient_email and "@" not in draft.recipient_email:
         warnings.append("Recipient email needs manual correction.")
         if "recipient_email" not in missing:
