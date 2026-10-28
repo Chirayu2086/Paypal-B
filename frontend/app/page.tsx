@@ -29,6 +29,21 @@ type Activity = {
   created_at: string;
 };
 
+type DraftExtraction = {
+  draft: {
+    recipient_name: string | null;
+    recipient_email: string | null;
+    amount: string | null;
+    currency: string | null;
+    purpose: string | null;
+    condition_summary: string | null;
+  };
+  missing_fields: string[];
+  warnings: string[];
+  requires_human_review: boolean;
+  created_payment_intent: boolean;
+};
+
 const defaultApi = process.env.NEXT_PUBLIC_PROXY_API_URL || "http://localhost:8000";
 
 function money(amount: string, currency = "USD") {
@@ -57,6 +72,8 @@ export default function Home() {
   const [health, setHealth] = useState<"checking" | "online" | "offline">("checking");
   const [notice, setNotice] = useState<{ kind: "success" | "error" | "info"; text: string } | null>(null);
   const [showConnection, setShowConnection] = useState(true);
+  const [aiInstruction, setAiInstruction] = useState("");
+  const [aiDraft, setAiDraft] = useState<DraftExtraction | null>(null);
   const [form, setForm] = useState({
     recipient_name: "",
     recipient_email: "",
@@ -109,6 +126,34 @@ export default function Home() {
   }, [base]);
 
   useEffect(() => { void checkHealth(); }, [checkHealth]);
+
+  async function handleAiDraft() {
+    setBusy(true);
+    setNotice(null);
+    setAiDraft(null);
+    try {
+      const extracted = await request("/v1/assistant/draft", {
+        method: "POST",
+        body: JSON.stringify({ instruction: aiInstruction }),
+      }) as DraftExtraction;
+      setAiDraft(extracted);
+      setForm({
+        recipient_name: extracted.draft.recipient_name || "",
+        recipient_email: extracted.draft.recipient_email || "",
+        amount: extracted.draft.amount || "",
+        purpose: extracted.draft.purpose || "",
+        condition_summary: extracted.draft.condition_summary || "",
+      });
+      setNotice({
+        kind: "info",
+        text: extracted.created_payment_intent
+          ? "Unexpected response: check the backend before continuing."
+          : "AI draft extracted. Review and correct every field; no payment intent was created.",
+      });
+    } catch (error) {
+      setNotice({ kind: "error", text: errorText(error) });
+    } finally { setBusy(false); }
+  }
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -240,7 +285,21 @@ export default function Home() {
           <div className="work-grid">
             <section className="panel create-panel" id="new-payment">
               <div className="section-heading"><div><div className="eyebrow">02 / REQUEST</div><h2>Prepare a payment</h2></div><span className="step-count">STEP 01 <i>OF 03</i></span></div>
-              <p className="muted">Create a structured intent. Nothing is sent until you review and approve it.</p>
+              <p className="muted">Describe the request naturally or enter the details manually. AI only prepares a draft; it never creates or approves a payment.</p>
+              <div className="ai-draft-box">
+                <label htmlFor="ai-instruction">DESCRIBE THE PAYMENT REQUEST</label>
+                <textarea id="ai-instruction" rows={3} maxLength={3000} value={aiInstruction} onChange={(e) => setAiInstruction(e.target.value)} placeholder="e.g. Pay Jordan Lee jordan@example.com $85 for the completed logo revisions. The source files were reviewed." />
+                <div className="ai-draft-actions">
+                  <span>AI extracts stated details only</span>
+                  <button className="button-outline" type="button" onClick={() => void handleAiDraft()} disabled={busy || !token.trim() || !aiInstruction.trim()}>Prepare AI draft <span>✦</span></button>
+                </div>
+                {aiDraft && <div className="ai-draft-result" role="status">
+                  <strong>{aiDraft.missing_fields.length ? "Review required — missing details" : "Draft prepared — verify all details"}</strong>
+                  {aiDraft.missing_fields.length > 0 && <p>Missing: {aiDraft.missing_fields.join(", ")}</p>}
+                  <ul>{aiDraft.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
+                  <span>No payment intent created by AI extraction.</span>
+                </div>}
+              </div>
               <form onSubmit={handleCreate} className="payment-form">
                 <div className="form-row"><label>RECIPIENT NAME<input required maxLength={120} value={form.recipient_name} onChange={(e) => setForm({ ...form, recipient_name: e.target.value })} placeholder="e.g. Jordan Lee" /></label><label>RECIPIENT EMAIL<input required type="email" maxLength={254} value={form.recipient_email} onChange={(e) => setForm({ ...form, recipient_email: e.target.value })} placeholder="jordan@example.com" /></label></div>
                 <div className="form-row amount-row"><label>AMOUNT<input required type="number" min="0.01" max="99999999.99" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></label><label>CURRENCY<div className="currency-field"><span>🇺🇸</span> USD <span className="currency-lock">⌑</span></div></label></div>
