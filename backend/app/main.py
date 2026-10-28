@@ -5,7 +5,8 @@ from backend.app.config import settings, validate_runtime_config
 from backend.app.database import init_db
 from backend.app.schemas import ActivityEvent, AgentProposal, AgentProposalRequest, ApprovalRequest, PaymentIntentCreate, PaymentIntentOut
 from backend.app.security import current_user
-from backend.app.service import approve_intent, create_intent, execute_intent, get_owned_intent, list_activity, list_owned_intents, reconcile_intent\nfrom backend.app.agent import propose_payment
+from backend.app.service import approve_intent, create_intent, execute_intent, get_owned_intent, list_activity, list_owned_intents, reconcile_intent
+from backend.app.agent import propose_payment
 
 
 @asynccontextmanager
@@ -32,7 +33,13 @@ def health():
     return {"status": "ok", "environment": settings.app_env, "payments": "sandbox_only"}
 
 
-@app.post("/v1/agent/propose", response_model=AgentProposal)\ndef create_agent_proposal(payload: AgentProposalRequest, user_id: str = Depends(current_user)):\n    """Extract a draft only; this endpoint never creates or executes a payment."""\n    return propose_payment(payload)\n\n\n@app.post("/v1/payment-intents", response_model=PaymentIntentOut, status_code=201)
+@app.post("/v1/agent/propose", response_model=AgentProposal)
+def create_agent_proposal(payload: AgentProposalRequest, user_id: str = Depends(current_user)):
+    """Extract a draft only; this endpoint never creates or executes a payment."""
+    return propose_payment(payload)
+
+
+@app.post("/v1/payment-intents", response_model=PaymentIntentOut, status_code=201)
 def create_payment_intent(payload: PaymentIntentCreate, user_id: str = Depends(current_user)):
     return create_intent(user_id, payload)
 
