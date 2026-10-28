@@ -20,7 +20,7 @@ type Intent = {
   failure_code: string | null;
 };
 
-type Activity = {
+type AgentProposal = {\n  recipient_name: string | null; recipient_email: string | null; amount: string | null; currency: string;\n  purpose: string | null; condition_summary: string | null; explanation: string; risk_flags: string[];\n  missing_fields: string[]; ready_for_review: boolean; source_text: string;\n};\n\ntype Activity = {
   id: number;
   payment_intent_id: string;
   event_type: string;
@@ -57,7 +57,7 @@ export default function Home() {
   const [health, setHealth] = useState<"checking" | "online" | "offline">("checking");
   const [notice, setNotice] = useState<{ kind: "success" | "error" | "info"; text: string } | null>(null);
   const [showConnection, setShowConnection] = useState(true);
-  const [form, setForm] = useState({
+  const [agentText, setAgentText] = useState("");\n  const [agentProposal, setAgentProposal] = useState<AgentProposal | null>(null);\n  const [agentBusy, setAgentBusy] = useState(false);\n  const [form, setForm] = useState({
     recipient_name: "",
     recipient_email: "",
     amount: "25.00",
@@ -109,6 +109,35 @@ export default function Home() {
   }, [base]);
 
   useEffect(() => { void checkHealth(); }, [checkHealth]);
+
+  async function handleAgentPropose(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAgentBusy(true);
+    setAgentProposal(null);
+    setNotice(null);
+    try {
+      const result = await request("/v1/agent/propose", {
+        method: "POST",
+        body: JSON.stringify({ text: agentText }),
+      }) as AgentProposal;
+      setAgentProposal(result);
+      setNotice({ kind: "success", text: "AI proposal prepared for review. No payment intent was created and nothing was sent." });
+    } catch (error) {
+      setNotice({ kind: "error", text: errorText(error) });
+    } finally { setAgentBusy(false); }
+  }
+
+  function applyAgentProposal() {
+    if (!agentProposal) return;
+    setForm({
+      recipient_name: agentProposal.recipient_name || "",
+      recipient_email: agentProposal.recipient_email || "",
+      amount: agentProposal.amount || "25.00",
+      purpose: agentProposal.purpose || "",
+      condition_summary: agentProposal.condition_summary || "",
+    });
+    document.getElementById("new-payment")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -229,6 +258,29 @@ export default function Home() {
             </div>
             <div className="connection-note"><span>ⓘ</span> Never paste PayPal client secrets here. Only use an authentication token issued by your configured identity provider.</div>
           </section>}
+
+          <section className="panel agent-panel" id="ai-agent">
+            <div className="section-heading"><div><div className="eyebrow">02 / AI PROPOSAL AGENT</div><h2>Describe the payment</h2></div><span className="agent-tag">DRAFT ONLY</span></div>
+            <p className="muted">Describe the request in plain English. Proxy extracts a draft and flags missing details. It does not create, approve, or send a payment.</p>
+            <form onSubmit={handleAgentPropose} className="agent-form">
+              <label>PAYMENT REQUEST<textarea rows={3} maxLength={4000} required value={agentText} onChange={(e) => setAgentText(e.target.value)} placeholder="Prepare $85 for Jordan Lee at jordan@example.com for logo revisions after I receive the final source files…" /></label>
+              <div className="agent-foot"><span>AI output is untrusted until you review it.</span><button className="button-dark" type="submit" disabled={agentBusy || busy || !token.trim() || !agentText.trim()}>{agentBusy ? "Extracting…" : "Extract proposal"} <span>→</span></button></div>
+            </form>
+            {agentProposal && <div className="proposal-result">
+              <div className="proposal-heading"><strong>{agentProposal.ready_for_review ? "Proposal extracted" : "More details needed"}</strong><span className={agentProposal.ready_for_review ? "proposal-state ready" : "proposal-state missing"}>{agentProposal.ready_for_review ? "READY TO REVIEW" : "INCOMPLETE"}</span></div>
+              <p className="proposal-explanation">{agentProposal.explanation}</p>
+              <div className="proposal-fields">
+                <div><small>RECIPIENT</small><strong>{agentProposal.recipient_name || "Missing"}</strong><span>{agentProposal.recipient_email || "Email required"}</span></div>
+                <div><small>AMOUNT</small><strong>{agentProposal.amount ? money(agentProposal.amount, agentProposal.currency) : "Missing"}</strong></div>
+                <div><small>PURPOSE</small><strong>{agentProposal.purpose || "Missing"}</strong></div>
+                <div><small>CONTEXT (UNVERIFIED)</small><strong>{agentProposal.condition_summary || "None supplied"}</strong></div>
+              </div>
+              {agentProposal.missing_fields.length > 0 && <p className="proposal-warning">Missing: {agentProposal.missing_fields.join(", ")}. Complete these fields before creating an intent.</p>}
+              {agentProposal.risk_flags.length > 0 && <ul className="proposal-risks">{agentProposal.risk_flags.map((flag, i) => <li key={i}>{flag}</li>)}</ul>}
+              <button className="button-outline" onClick={applyAgentProposal} type="button">Review in payment form <span>↓</span></button>
+              <p className="proposal-disclaimer">Applying this draft only fills the form. You must still submit it, review the resulting intent, approve it explicitly, and execute separately.</p>
+            </div>}
+          </section>
 
           <section className="metrics">
             <div className="metric-card"><div className="metric-top"><span>AWAITING APPROVAL</span><span className="metric-symbol amber">◷</span></div><div className="metric-value">{awaiting.toString().padStart(2, "0")}</div><div className="metric-foot"><span className="tiny-dot amber-dot" /> Needs your review</div></div>
