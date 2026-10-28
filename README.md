@@ -12,6 +12,7 @@ Proxy is a human-approved AI payment assistant being built for the Build What's 
 - PayPal Sandbox payout adapter with idempotency, bounded status polling, and read-only reconciliation.
 - Audit feed and automated backend tests.
 - Next.js operator dashboard for creating intents, reviewing and approving them, requesting execution, reconciling uncertain outcomes, and viewing the audit trail.
+- AI-assisted natural-language proposal extraction with locally validated structured output, missing-field detection, and advisory risk flags.
 
 ## Stack
 
@@ -32,9 +33,11 @@ Proxy is a human-approved AI payment assistant being built for the Build What's 
 
 A created intent is not an approved payment. Approval is a separate action, execution is another action, and only a provider-verified transaction ID with a successful terminal status is represented as settled. Unknown outcomes remain in `processing` and should be reconciled against the existing provider batch rather than retried blindly.
 
+See [AI agent safety boundaries](docs/AI_AGENT.md) for configuration and endpoint details.
+
 ## Not yet implemented / validated
 
-- Natural-language AI intent extraction and evidence analysis.
+- Evidence verification and broader AI risk analysis beyond proposal extraction.
 - First-party authentication provider integration.
 - Real PayPal Sandbox end-to-end transaction validation.
 - Deployment, production-grade monitoring, webhook signature verification, and independent security review.
