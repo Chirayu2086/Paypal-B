@@ -20,7 +20,13 @@ type Intent = {
   failure_code: string | null;
 };
 
-type AgentProposal = {\n  recipient_name: string | null; recipient_email: string | null; amount: string | null; currency: string;\n  purpose: string | null; condition_summary: string | null; explanation: string; risk_flags: string[];\n  missing_fields: string[]; ready_for_review: boolean; source_text: string;\n};\n\ntype Activity = {
+type AgentProposal = {
+  recipient_name: string | null; recipient_email: string | null; amount: string | null; currency: string;
+  purpose: string | null; condition_summary: string | null; explanation: string; risk_flags: string[];
+  missing_fields: string[]; ready_for_review: boolean; source_text: string;
+};
+
+type Activity = {
   id: number;
   payment_intent_id: string;
   event_type: string;
@@ -57,7 +63,10 @@ export default function Home() {
   const [health, setHealth] = useState<"checking" | "online" | "offline">("checking");
   const [notice, setNotice] = useState<{ kind: "success" | "error" | "info"; text: string } | null>(null);
   const [showConnection, setShowConnection] = useState(true);
-  const [agentText, setAgentText] = useState("");\n  const [agentProposal, setAgentProposal] = useState<AgentProposal | null>(null);\n  const [agentBusy, setAgentBusy] = useState(false);\n  const [form, setForm] = useState({
+  const [agentText, setAgentText] = useState("");
+  const [agentProposal, setAgentProposal] = useState<AgentProposal | null>(null);
+  const [agentBusy, setAgentBusy] = useState(false);
+  const [form, setForm] = useState({
     recipient_name: "",
     recipient_email: "",
     amount: "25.00",
