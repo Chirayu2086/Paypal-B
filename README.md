@@ -13,6 +13,7 @@ Proxy is a human-approved AI payment assistant being built for the Build What's 
 - Audit feed and automated backend tests.
 - Next.js operator dashboard for creating intents, reviewing and approving them, requesting execution, reconciling uncertain outcomes, and viewing the audit trail.
 - AI-assisted natural-language proposal extraction with locally validated structured output, missing-field detection, and advisory risk flags.
+- Deterministic evidence triage that checks submission completeness and basic URL hygiene while explicitly leaving every claim and source unverified.
 
 ## Stack
 
@@ -33,13 +34,14 @@ Proxy is a human-approved AI payment assistant being built for the Build What's 
 
 A created intent is not an approved payment. Approval is a separate action, execution is another action, and only a provider-verified transaction ID with a successful terminal status is represented as settled. Unknown outcomes remain in `processing` and should be reconciled against the existing provider batch rather than retried blindly.
 
-See [AI agent safety boundaries](docs/AI_AGENT.md) for configuration and endpoint details.
+The evidence-review endpoint does not fetch sources or verify truth. Its output is triage guidance only and must not be treated as an automated approve/deny decision. See [AI agent safety boundaries](docs/AI_AGENT.md) and [Evidence review limitations](docs/EVIDENCE_REVIEW.md).
 
 ## Not yet implemented / validated
 
-- Evidence verification and broader AI risk analysis beyond proposal extraction.
+- Independent evidence verification and automated source-content analysis.
 - First-party authentication provider integration.
 - Real PayPal Sandbox end-to-end transaction validation.
 - Deployment, production-grade monitoring, webhook signature verification, and independent security review.
+- Evidence-review frontend panel (endpoint and backend tests only).
 
 This is a hackathon MVP, not production financial infrastructure. Use Sandbox credentials only. Never commit secrets or use live payment credentials.
