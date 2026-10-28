@@ -5,8 +5,9 @@ Next.js dashboard for the Proxy safety-first payment API.
 ## Requirements
 
 - Node.js 20.9+
-- The FastAPI backend running locally or at a trusted HTTPS API origin
-- A JWT issued by the configured trusted identity provider (claims must include `sub` and `exp`)
+- FastAPI backend running locally or at a trusted HTTPS API origin
+- JWT issued by a trusted identity provider (claims must include `sub` and `exp`)
+- Optional backend AI provider key to enable natural-language draft extraction
 
 ## Run locally
 
@@ -19,12 +20,19 @@ npm run dev
 
 Open http://localhost:3000. The API defaults to `http://localhost:8000`; override it with `NEXT_PUBLIC_PROXY_API_URL` if needed.
 
-The backend expects authenticated requests on `/v1/*`. Paste a valid bearer token into the connection panel. The token is kept only in in-memory React state and is not written to localStorage or cookies. Do not paste PayPal credentials or secrets. Configure CORS on the backend to allow the frontend origin before using a separate frontend port.
+The backend expects authenticated requests on `/v1/*`. Paste a valid bearer token into the connection panel. The token is kept only in in-memory React state and is not written to localStorage or cookies. Do not paste PayPal credentials or secrets. Configure backend CORS to allow the frontend origin.
+
+## AI draft flow
+
+Set `AI_API_KEY`, and optionally `AI_BASE_URL` and `AI_MODEL`, in the backend environment. The default endpoint is OpenAI-compatible. The key stays on the backend and is never sent to the browser.
+
+The natural-language draft endpoint extracts explicitly stated fields and returns missing fields and warnings. It does not create an intent, approve a payment, or call PayPal. Review and correct every field before manually creating an intent. User text is sent to the configured AI provider; do not submit information you are not permitted to share with that provider.
 
 ## Current capabilities
 
 - Create a structured payment intent.
-- Review recipient, amount, purpose, supporting context, and approval fingerprint.
+- Draft recipient, amount, purpose, and context from a natural-language request.
+- Review recipient, amount, purpose, context, and approval fingerprint.
 - Approve the exact intent snapshot.
 - Request execution separately from approval.
 - Reconcile an ambiguous outcome against the existing payout batch.
@@ -33,9 +41,9 @@ The backend expects authenticated requests on `/v1/*`. Paste a valid bearer toke
 
 ## Honest limitations
 
-- This is an operator dashboard, not an AI chat or autonomous agent yet. Payment creation is a structured form; AI intent extraction and evidence analysis are not implemented in this UI.
-- The current API does not expose a list endpoint for payment intents. The dashboard shows the currently selected intent and authenticated audit feed; the table will populate only if the backend later adds a list route. The UI handles an unavailable list route without treating it as a payment failure.
+- AI extraction can make mistakes and requires manual review.
+- Context is user-provided text, not independently verified evidence.
 - Authentication is supplied externally; there is no demo login.
 - The UI only supports the backend's current USD schema.
-- PayPal Sandbox configuration and a real Sandbox end-to-end validation are still required. A healthy API does not mean PayPal is configured or a payout settled.
-- Before production: add mature auth integration, CSRF/CSP and deployment review, backend CORS allowlist, rate limiting, webhook verification, observability, and an independent security assessment.
+- PayPal Sandbox configuration and a real Sandbox end-to-end validation are still required.
+- Before production: add mature auth integration, CSRF/CSP and deployment review, rate limiting, webhook verification, observability, and independent security assessment.
