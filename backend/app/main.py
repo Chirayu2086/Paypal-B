@@ -1,10 +1,11 @@
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 from backend.app.config import settings, validate_runtime_config
 from backend.app.database import init_db
 from backend.app.schemas import ActivityEvent, ApprovalRequest, PaymentIntentCreate, PaymentIntentOut
 from backend.app.security import current_user
-from backend.app.service import approve_intent, create_intent, execute_intent, get_owned_intent, list_activity, reconcile_intent
+from backend.app.service import approve_intent, create_intent, execute_intent, get_owned_intent, list_activity, list_owned_intents, reconcile_intent
 
 
 @asynccontextmanager
@@ -15,6 +16,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Proxy API", version="0.1.0", description="Safety-first AI payment agent API", lifespan=lifespan)
+allowed_origins = [origin.strip() for origin in settings.cors_allowed_origins.split(",") if origin.strip()]
+if allowed_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 
 
 @app.get("/health")
@@ -25,6 +35,11 @@ def health():
 @app.post("/v1/payment-intents", response_model=PaymentIntentOut, status_code=201)
 def create_payment_intent(payload: PaymentIntentCreate, user_id: str = Depends(current_user)):
     return create_intent(user_id, payload)
+
+
+@app.get("/v1/payment-intents", response_model=list[PaymentIntentOut])
+def list_payment_intents(limit: int = Query(default=50, ge=1, le=100), user_id: str = Depends(current_user)):
+    return list_owned_intents(user_id, limit)
 
 
 @app.get("/v1/payment-intents/{intent_id}", response_model=PaymentIntentOut)
