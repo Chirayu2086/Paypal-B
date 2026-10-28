@@ -7,7 +7,7 @@ from backend.app.config import settings
 from backend.app.database import connect, init_db
 from backend.app.payments import PaymentResult, PaymentProviderNotConfigured, PaymentProviderError
 from backend.app.schemas import PaymentIntentCreate
-from backend.app.service import approve_intent, create_intent, execute_intent, get_owned_intent, list_activity, reconcile_intent
+from backend.app.service import approve_intent, create_intent, execute_intent, get_owned_intent, list_activity, list_owned_intents, reconcile_intent
 
 
 class SuccessfulProvider:
@@ -63,6 +63,17 @@ def test_only_owner_can_approve_or_read():
     with pytest.raises(HTTPException) as exc:
         get_owned_intent("user-2", created["id"])
     assert exc.value.status_code == 404
+
+
+def test_list_intents_is_owner_scoped_and_newest_first():
+    first = create_intent("user-1", payload())
+    create_intent("user-2", payload())
+    second = create_intent("user-1", payload("12.00"))
+    items = list_owned_intents("user-1", 50)
+    assert [item["id"] for item in items] == [second["id"], first["id"]]
+    assert all(item["owner_id"] == "user-1" for item in items)
+    assert list_owned_intents("user-2", 50)[0]["owner_id"] == "user-2"
+    assert list_owned_intents("user-1", 0)[0]["id"] == second["id"]
 
 
 def test_successful_provider_result_is_audited():
@@ -147,7 +158,7 @@ class ReconciliationProvider:
 
 def test_unknown_execution_persists_batch_for_later_reconciliation():
     created = create_intent("user-1", payload())
-    approved = approve_intent("user-1", created["id"], created["approval_fingerprint"])
+    approve_intent("user-1", created["id"], created["approval_fingerprint"])
     with pytest.raises(HTTPException) as exc:
         execute_intent("user-1", created["id"], provider=UnknownOutcomeProvider())
     assert exc.value.status_code == 502
@@ -186,12 +197,11 @@ def test_reconciliation_is_owner_scoped_and_requires_processing_batch():
         reconcile_intent("user-2", created["id"], provider=ReconciliationProvider())
     assert wrong_owner.value.status_code == 404
 
-    approved = approve_intent("user-1", created["id"], created["approval_fingerprint"])
+    approve_intent("user-1", created["id"], created["approval_fingerprint"])
     with pytest.raises(HTTPException) as not_processing:
         reconcile_intent("user-1", created["id"], provider=ReconciliationProvider())
     assert not_processing.value.status_code == 409
 
-    # Simulate an ambiguous provider outcome where no batch identifier was captured.
     with connect() as conn:
         conn.execute("UPDATE payment_intents SET status='processing', failure_code='provider_outcome_unknown' WHERE id=?", (created["id"],))
     provider = ReconciliationProvider()
@@ -200,7 +210,6 @@ def test_reconciliation_is_owner_scoped_and_requires_processing_batch():
     assert missing_batch.value.status_code == 409
     assert provider.reconcile_calls == []
     assert provider.execute_calls == 0
-
 
 
 def test_reconciliation_does_not_accept_unverified_provider_result():
